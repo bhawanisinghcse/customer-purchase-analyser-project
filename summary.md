@@ -1,183 +1,199 @@
-# Technical Project Summary: Customer Purchase Pattern Analyzer
+# Technical Summary: Customer Purchase Pattern Analyzer
 
-A technical and analytical summary report detailing the system architecture, mathematical foundations, data hygiene methodology, empirical benchmark findings, and acceptance verification of the **Customer Purchase Pattern Analyzer**.
-
----
-
-## 1. Executive Summary & Problem Scope
-
-Understanding consumer spending patterns across chronological time horizons and product categories is foundational to inventory procurement, promotional planning, and revenue forecasting. Transactional data exported from enterprise POS registers and online checkout gateways is frequently dirty, containing missing fields, string corruptions, or negative amounts.
-
-The **Customer Purchase Pattern Analyzer** is an end-to-end Python 3 analytical application engineered to:
-1. Ingest customer order logs from CSV transaction feeds.
-2. Filter corrupt, non-numeric, or negative amounts with row-specific console warnings.
-3. Aggregate monthly expenditures in chronological calendar order (`Jan` through `Dec`).
-4. Evaluate central tendency via arithmetic mean and median order values using vector **NumPy** routines.
-5. Rank product categories by expenditure and calculate percentage revenue contribution.
-6. Provide an automated acceptance test runner verifying normal, boundary, invalid, and category distribution scenarios.
-7. Render publication-ready **Matplotlib** visualizations exported to `monthly_spending.png`.
+This document details the software architecture, analytical algorithms, data validation methodology, and empirical verification results for the Customer Purchase Pattern Analyzer.
 
 ---
 
-## 2. Technical Architecture & Module Structure
+## 1. System Architecture & Pipeline
 
-The solution is implemented in [`main.py`](main.py) as a modular, standalone pipeline adhering strictly to separation of concerns:
+The system is implemented in `main.py` as a single-module analytical pipeline divided into four distinct phases: Ingestion, Validation, Analytics, and Visualization.
 
 ```text
-                                 [ Raw CSV File ]
-                                        │
-                                        ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ 1. INGESTION LAYER: load_orders() & detect_header()                          │
-│    • Checks file existence and non-zero byte size                            │
-│    • Dynamically inspects first row to detect presence of column headers     │
-│    • Enforces mandatory columns: OrderID, Month, Category, Amount            │
-└──────────────────────────────────────┬───────────────────────────────────────┘
-                                       │
-                                       ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ 2. DATA HYGIENE LAYER: validate_orders()                                     │
-│    • Strips leading/trailing whitespace and Unicode BOM artifacts            │
-│    • Normalizes month names to standard 3-letter title case (Jan, Feb, ...)  │
-│    • Traps non-numeric amounts: Warning: Row X skipped - Amount must be a ... │
-│    • Traps negative amounts:    Warning: Row X skipped - Amount cannot be ...│
-│    • Returns sanitized DataFrame with typed numeric series                   │
-└──────────────────────────────────────┬───────────────────────────────────────┘
-                                       │
-                                       ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ 3. ANALYTICAL & STATISTICAL ENGINE (NumPy & Pandas)                          │
-│    • show_monthly_spending(): Chronological calendar grouping & peak month   │
-│    • show_order_statistics(): np.mean() & np.median() calculations          │
-│    • show_category_share_and_stats(): Category ranking & percentage shares   │
-│    • run_acceptance_test_cases(): Automated verification of all 4 test cases │
-└──────────────────────────────────────┬───────────────────────────────────────┘
-                                       │
-                                       ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ 4. PRESENTATION & VISUALIZATION LAYER                                        │
-│    • plot_monthly_chart(): High-resolution 300 DPI Matplotlib bar chart      │
-│    • Exports monthly_spending.png with numerical value annotations           │
-│    • Interactive console menu loop (Options 1 to 6)                          │
-└──────────────────────────────────────────────────────────────────────────────┘
+                           [ Input CSV File ]
+                                   │
+                                   ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 1. INGESTION (`load_orders`, `detect_header`)                          │
+│    - Verifies file presence and non-zero byte size                     │
+│    - Detects whether line 1 is a header row or raw record data         │
+│    - Loads fields into a Pandas DataFrame with string typing           │
+└──────────────────────────────────┬─────────────────────────────────────┘
+                                   │
+                                   ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 2. VALIDATION & SANITIZATION (`validate_orders`)                       │
+│    - Strips whitespace and Unicode BOM artifacts                       │
+│    - Standardizes month names to 3-letter title case (Jan, Feb, ...)   │
+│    - Traps and reports invalid data:                                   │
+│        * Non-numeric values -> `Warning: Row X skipped - ...`          │
+│        * Negative values    -> `Warning: Row X skipped - ...`          │
+│        * Blank attributes   -> `Warning: Row X skipped - ...`          │
+│    - Returns sanitized DataFrame with typed numeric series             │
+└──────────────────────────────────┬─────────────────────────────────────┘
+                                   │
+                                   ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 3. ANALYTICAL PROCESSING (`main.py` handlers)                          │
+│    - Chronological monthly aggregation (`show_monthly_spending`)       │
+│    - Central tendency estimation via NumPy (`show_order_statistics`)   │
+│    - Category ranking and share computation (`show_category_share...`) │
+│    - Acceptance suite test runner (`run_acceptance_test_cases`)        │
+└──────────────────────────────────┬─────────────────────────────────────┘
+                                   │
+                                   ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 4. VISUALIZATION ENGINE (`plot_monthly_chart`)                         │
+│    - Generates 300 DPI Matplotlib bar chart (`monthly_spending.png`)   │
+│    - Annotates bar heights with formatted currency amounts             │
+│    - Supports headless runtime via `HEADLESS=1`                        │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 3. Mathematical & Statistical Foundations (NumPy)
+## 2. Mathematical Formulations & NumPy Implementation
 
-All central tendency and percentage share calculations are performed using vectorized operations on contiguous NumPy arrays:
+All aggregations and statistical calculations use vector operations on contiguous NumPy arrays to avoid iterative loop overhead and precision loss.
 
-### 3.1 Arithmetic Mean (Mean Order Value)
-For a set of $N$ valid transaction amounts $\{a_1, a_2, \dots, a_N\}$:
+### 2.1 Arithmetic Mean
+For a set of $N$ valid transaction amounts $A = \{a_1, a_2, \dots, a_N\}$:
+
 $$\bar{a} = \frac{1}{N} \sum_{i=1}^{N} a_i$$
 
 - **Implementation**: `np.mean(amounts)`
-- **Significance**: Quantifies the overall ticket average per transaction.
+- **Role**: Measures average order value across the dataset.
 
-### 3.2 Median Order Value
+### 2.2 Median
 For transaction amounts sorted in ascending order $a_{(1)} \le a_{(2)} \le \dots \le a_{(N)}$:
-$$\text{Median} = \begin{cases} 
-a_{\left(\frac{N+1}{2}\right)} & \text{if } N \text{ is odd} \\ 
+
+$$\text{Median}(A) = \begin{cases} 
+a_{\left(\frac{N+1}{2}\right)} & \text{if } N \text{ is odd} \\[8pt]
 \frac{a_{\left(\frac{N}{2}\right)} + a_{\left(\frac{N}{2}+1\right)}}{2} & \text{if } N \text{ is even} 
 \end{cases}$$
 
 - **Implementation**: `np.median(amounts)`
-- **Statistical Significance in Retail Analytics**:
-  Commercial sales distributions typically exhibit strong positive (right-hand) skewness caused by occasional high-ticket orders (e.g., consumer electronics or enterprise hardware). While the arithmetic mean is sensitive to extreme values, the median represents the true typical customer expenditure, unaffected by high-value outliers.
+- **Role**: Retail transaction distributions are often right-skewed due to high-value purchases. While the arithmetic mean is sensitive to extreme values, the median provides a measure of central tendency that remains stable against outliers.
 
-### 3.3 Product Category Revenue Percentage Share
-For each product category $k$ with aggregated expenditure $S_k$ and total expenditure $S_{\text{total}} = \sum_{j=1}^{M} S_j$:
-$$\text{Percentage Share}_k = \left( \frac{S_k}{S_{\text{total}}} \right) \times 100\%$$
+### 2.3 Category Percentage Share
+For product category $k$ with total spending $S_k$ and overall spending $S_{\text{total}} = \sum_{j=1}^{M} S_j$:
 
-- **Division-by-Zero Guard**: If $S_{\text{total}} = 0$, the algorithm suppresses division errors and outputs an explanatory notification.
+$$\text{Share}_k = \left( \frac{S_k}{S_{\text{total}}} \right) \times 100$$
+
+- **Zero-Sum Guard**: If $S_{\text{total}} = 0$, the calculation is bypassed and outputs `Percentage cannot be calculated: total spending is Rs. 0`.
+
+### 2.4 Chronological Month Indexing
+To prevent calendar months from sorting alphabetically (`Apr`, `Aug`, `Dec`, `Feb`, ...), month keys are mapped to a fixed calendar sequence:
+
+```python
+CALENDAR_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+def month_sort_key(month_name: str) -> tuple[int, int | str]:
+    if month_name in CALENDAR_MONTHS:
+        return (0, CALENDAR_MONTHS.index(month_name))
+    return (1, month_name)
+```
 
 ---
 
-## 4. Empirical Benchmark Findings (`orders.csv`)
+## 3. Empirical Benchmark Analysis (`orders.csv`)
 
-Analyzing the default benchmark dataset [`orders.csv`](orders.csv) yields the following empirical metrics:
+Running the analyzer on the standard `orders.csv` benchmark file produces the following output:
 
-### 4.1 Summary Statistics
-| Metric | Quantitative Value | Computational Method |
+### 3.1 Overview Statistics
+| Metric | Value | Implementation |
 | :--- | :--- | :--- |
-| **Valid Orders Analyzed** | 8 | Filtered row count after sanitization |
-| **Total Expenditure** | Rs. 34,000 | Vector sum: `np.sum(amounts)` |
-| **Mean Order Value** | Rs. 4,250.00 | Arithmetic average: `np.mean(amounts)` |
-| **Median Order Value** | Rs. 3,000.00 | Positional midpoint: `np.median(amounts)` |
-| **Peak Spending Month** | February (Rs. 12,500) | Maximum monthly aggregation |
+| **Valid Orders Analyzed** | 8 | Filtered row count |
+| **Total Revenue** | Rs. 34,000 | `np.sum(amounts)` |
+| **Mean Order Value** | Rs. 4,250.00 | `np.mean(amounts)` |
+| **Median Order Value** | Rs. 3,000.00 | `np.median(amounts)` |
+| **Peak Spending Month** | Feb (Rs. 12,500) | `max(monthly_totals.values())` |
 
-### 4.2 Chronological Monthly Spending Distribution
-| Calendar Month | Total Spending | Order Count | Contributing Categories |
-| :--- | :--- | :---: | :--- |
-| **January** | Rs. 5,000 | 2 | Grocery (Rs. 2,000), Clothing (Rs. 3,000) |
-| **February** | Rs. 12,500 | 2 | Grocery (Rs. 2,500), Electronics (Rs. 10,000) |
-| **March** | Rs. 5,000 | 2 | Grocery (Rs. 3,000), Clothing (Rs. 2,000) |
-| **April** | Rs. 11,500 | 2 | Electronics (Rs. 8,000), Grocery (Rs. 3,500) |
-| **Total** | **Rs. 34,000** | **8** | — |
+### 3.2 Monthly Spending Breakdown
+| Month | Orders | Revenue (Rs.) | Proportion of Total |
+| :--- | :---: | :---: | :---: |
+| **Jan** | 2 | 5,000 | 14.71% |
+| **Feb** | 2 | 12,500 | 36.76% |
+| **Mar** | 2 | 5,000 | 14.71% |
+| **Apr** | 2 | 11,500 | 33.82% |
+| **Total** | **8** | **34,000** | **100.00%** |
 
-*Analytical Finding*: Monthly revenue is concentrated in February (Rs. 12,500) and April (Rs. 11,500), driven primarily by major Electronics purchases.
+### 3.3 Category Distribution
+| Category | Orders | Revenue (Rs.) | Revenue Share |
+| :--- | :---: | :---: | :---: |
+| **Electronics** | 2 | 18,000 | 52.94% |
+| **Grocery** | 4 | 11,000 | 32.35% |
+| **Clothing** | 2 | 5,000 | 14.71% |
+| **Total** | **8** | **34,000** | **100.00%** |
 
-### 4.3 Category Revenue Contribution & Pareto Distribution
-| Category | Total Revenue | Percentage Share | Cumulative Share | Order Frequency |
-| :--- | :--- | :---: | :---: | :---: |
-| **Electronics** | Rs. 18,000 | 52.94% | 52.94% | 2 (25.0%) |
-| **Grocery** | Rs. 11,000 | 32.35% | 85.29% | 4 (50.0%) |
-| **Clothing** | Rs. 5,000 | 14.71% | 100.00% | 2 (25.0%) |
-| **Total** | **Rs. 34,000** | **100.00%** | **100.00%** | **8 (100.0%)** |
-
-*Analytical Finding*: The dataset exhibits clear Pareto characteristics: while **Grocery** accounts for 50% of customer order volume, **Electronics** accounts for more than half (52.94%) of total revenue.
+*Note*: Electronics generates over half of total revenue (52.94%) across only two transactions, whereas Grocery represents half of all transactions (4 orders) but only 32.35% of total revenue.
 
 ---
 
-## 5. Acceptance Test Cases Verification Matrix
+## 4. Acceptance Test Suite Verification
 
-The application has been verified against all 4 official test cases from the specification with 100% output parity:
+The application was validated against all four test cases from the specification. The full suite can be executed using `python main.py --test`.
 
-| Test Case | Scenario / Focus | Input Dataset | Expected Output Summary | Observed Status |
+| Case | Focus | Input File | Expected Output Summary | Verification Status |
 | :--- | :--- | :--- | :--- | :---: |
-| **Test Case 1** | Normal Input (Monthly spending) | [`test_case_1.csv`](test_case_1.csv) | Jan: Rs. 5000, Feb: Rs. 12500, Mar: Rs. 5000, Apr: Rs. 11500, Total: Rs. 34000, Best Month: Feb | ✅ **PASS** |
-| **Test Case 2** | Boundary / Single Order (Order stats) | [`test_case_2.csv`](test_case_2.csv) | Orders: 1, Mean: Rs. 2000.00, Median: Rs. 2000.00, Best Month: Jan | ✅ **PASS** |
-| **Test Case 3** | Invalid Input (Validation warnings) | [`test_case_3.csv`](test_case_3.csv) | Warning on Row 9 (`N/A`) & Row 10 (`-500`); Valid orders analysed: 8 | ✅ **PASS** |
-| **Test Case 4** | Category Share & Statistics | [`test_case_4.csv`](test_case_4.csv) | Electronics 52.94%, Grocery 32.35%, Clothing 14.71%, Mean: Rs. 4250.00, Median: Rs. 3000.00 | ✅ **PASS** |
+| **1** | Normal Input | `test_case_1.csv` | Jan: Rs. 5000, Feb: Rs. 12500, Mar: Rs. 5000, Apr: Rs. 11500; Total: Rs. 34000; Best month: Feb (Rs. 12500) | PASS |
+| **2** | Boundary ($N=1$) | `test_case_2.csv` | Orders: 1; Mean: Rs. 2000.00; Median: Rs. 2000.00; Best month: Jan (Rs. 2000) | PASS |
+| **3** | Invalid Inputs | `test_case_3.csv` | Warning on Row 9 (`N/A`) and Row 10 (`-500`); 8 valid records analyzed | PASS |
+| **4** | Category Share | `test_case_4.csv` | Electronics: 52.94%, Grocery: 32.35%, Clothing: 14.71%; Mean: Rs. 4250.00, Median: Rs. 3000.00 | PASS |
+
+### Execution Artifacts
+
+#### Test Case 1 Output
+```text
+Jan : Rs. 5000
+Feb : Rs. 12500
+Mar : Rs. 5000
+Apr : Rs. 11500
+Total: Rs. 34000
+Best month: Feb (Rs. 12500)
+(bar chart is displayed)
+```
+![Test Case 1 Verification](test_case_1_screenshot.png)
 
 ---
 
-### Terminal Execution Proofs (Individual Test Cases)
-
-#### Test Case 1: Normal Input Verification (Monthly Spending)
-![Test Case 1 Screenshot](test_case_1_screenshot.png)
-
-#### Test Case 2: Boundary / Minimum Input Verification (Single Order)
-![Test Case 2 Screenshot](test_case_2_screenshot.png)
-
-#### Test Case 3: Invalid Input & Warnings Verification
-![Test Case 3 Screenshot](test_case_3_screenshot.png)
-
-#### Test Case 4: Category Share & Statistics Verification
-![Test Case 4 Screenshot](test_case_4_screenshot.png)
+#### Test Case 2 Output
+```text
+Orders analysed: 1
+Mean order value: Rs. 2000.00
+Median order value: Rs. 2000.00
+Best month: Jan (Rs. 2000)
+```
+![Test Case 2 Verification](test_case_2_screenshot.png)
 
 ---
 
-## 6. Visualization Architecture (Matplotlib)
-
-The visualization module in [`main.py`](main.py) produces an annotated bar chart (`monthly_spending.png`):
-- **Resolution**: Rendered at $8 \times 5$ inches at 300 DPI for publication clarity.
-- **Color Aesthetics**: Direct single-hue navy (`#2b5c8f`) with 0.55 bar width.
-- **Value Annotations**: Every bar features its exact currency value centered above the column (`plt.annotate`).
-- **Headless Safety**: Checks `os.environ.get("HEADLESS")` to prevent hanging in headless servers or automated testing environments.
-
----
-
-## 7. Software Engineering & Defensive Standards
-
-1. **Zero External Binaries**: Operates purely on standard Python 3 with verified ecosystem libraries (`pandas`, `numpy`, `matplotlib`).
-2. **Defensive Data Handling**: Handles missing files, empty files, missing column headers, and non-numeric corrupted strings without unhandled exceptions.
-3. **Chronological Sorting**: Ensures calendar sequence (`Jan` through `Dec`) through an explicit mapping index rather than lexicographical string sorting.
-4. **Memory Hygiene**: Manages open Matplotlib figures with explicit `plt.close()` calls to eliminate GUI thread memory leaks.
+#### Test Case 3 Output
+```text
+Warning: Row 9 skipped - Amount must be a number.
+Warning: Row 10 skipped - Amount cannot be negative.
+Valid orders analysed: 8
+```
+![Test Case 3 Verification](test_case_3_screenshot.png)
 
 ---
 
-## 8. Conclusion
+#### Test Case 4 Output
+```text
+Electronics : Rs. 18000 (52.94%)
+Grocery : Rs. 11000 (32.35%)
+Clothing : Rs. 5000 (14.71%)
+Mean order value: Rs. 4250.00
+Median order value: Rs. 3000.00
+```
+![Test Case 4 Verification](test_case_4_screenshot.png)
 
-The **Customer Purchase Pattern Analyzer** satisfies all functional and non-functional requirements. Its clean architecture, robust data sanitization engine, accurate NumPy vector computations, and verifiable test suite deliver a reliable, production-ready tool for retail and e-commerce transaction analysis.
+---
+
+## 5. Defensive Implementation Details
+
+1. **Header Inspection**: `detect_header` checks the first row for field names before reading the CSV body. This allows both headed CSVs (`test_case_2.csv`) and unheaded raw transaction dumps (`test_case_2_no_header.csv`) to parse without manual configuration.
+2. **Input Hygiene**: Amounts are stripped of whitespace and tested for float conversion. Non-convertible tokens and values where `amount < 0` are discarded with informative warning logs indicating the exact row number.
+3. **Format Currency Routine**: `format_amount` distinguishes whole values from floating numbers, rendering `Rs. 5000` rather than `Rs. 5000.00`, while preserving two decimal places on fractional currency inputs.
+4. **Headless Execution Guard**: The plotting module checks `os.environ.get("HEADLESS")`. When set to `"1"`, `plt.show()` is skipped, saving the plot directly to `monthly_spending.png` without crashing non-GUI environments.
+5. **Figure Cleanup**: Every call to `plot_monthly_chart` guarantees figure termination via `plt.close()`, preventing resource leakage during repeated menu selections.
